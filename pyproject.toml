@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wholesale-outreach-kit"
+version = "0.1.0"
+description = "B2B supplier outreach kit with a four-gate pre-send safety stack: MX validation, fact-check linting, reputation caps, and SQLite suppression memory."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "ADZ"}]
+
+[project.urls]
+Repository = "https://github.com/Wilshawdirect/wholesale-outreach-kit"
+
+[tool.setuptools]
+packages = ["outreachkit"]

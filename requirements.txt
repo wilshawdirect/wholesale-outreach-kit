@@ -1,0 +1,3 @@
+# outreachkit is stdlib-only: there are no runtime dependencies.
+# Requires Python >= 3.11 (StrEnum, datetime.UTC).
+# This file is kept so `pip install -r requirements.txt` is a no-op, not an error.

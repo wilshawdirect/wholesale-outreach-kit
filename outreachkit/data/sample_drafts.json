@@ -1,0 +1,32 @@
+[
+  {
+    "to": "purchasing@acme-wholesale.example.com",
+    "subject": "Trade account enquiry - ACME Wholesale",
+    "body": "Hello,\n\nI run an online retail business and would like to open a trade account with ACME Wholesale. Could you share your account application form and current price list?\n\nBest regards,\nJordan Smith"
+  },
+  {
+    "to": "sales@dead-domain.example.net",
+    "subject": "Trade account enquiry",
+    "body": "Hello,\n\nWe would like to discuss opening a wholesale account with your company.\n\nBest regards,\nJordan Smith"
+  },
+  {
+    "to": "info@bounced-before.example.org",
+    "subject": "Following up on wholesale pricing",
+    "body": "Hello,\n\nJust following up on my earlier note about wholesale pricing.\n\nBest regards,\nJordan Smith"
+  },
+  {
+    "to": "trade@overclaim.example.com",
+    "subject": "Partnership enquiry",
+    "body": "Hello,\n\nWe are an established retailer trading since 2015 with 10 years of experience in the sector, and we would like to stock your range.\n\nBest regards,\nJordan Smith"
+  },
+  {
+    "to": "orders@fresh-supplier.example.com",
+    "subject": "Opening a trade account",
+    "body": "Hello,\n\nI would like to apply for a trade account and receive your latest catalogue.\n\nBest regards,\nJordan Smith"
+  },
+  {
+    "to": "hello@overflow-supplier.example.com",
+    "subject": "Wholesale account application",
+    "body": "Hello,\n\nPlease could you send over your wholesale account application details?\n\nBest regards,\nJordan Smith"
+  }
+]
