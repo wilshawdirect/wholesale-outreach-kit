@@ -60,6 +60,13 @@ def main(argv: list[str] | None = None) -> int:
         help="run the offline test suite and exit")
     sub = parser.add_subparsers(dest="command")
 
+    p = sub.add_parser("status", help="show the bounce rate and whether sending is paused")
+    p.add_argument("--db", default="outreachkit.db", help="SQLite path for suppression memory + send log")
+    p.add_argument("--window", type=int, default=100, help="how many of the newest sends to count")
+
+    p = sub.add_parser("resume", help="clear a bounce-rate pause (a human decision); counting restarts from the newest send")
+    p.add_argument("--db", default="outreachkit.db", help="SQLite path for suppression memory + send log")
+
     p = sub.add_parser("process", help="run a batch of drafts through the gate stack")
     p.add_argument("--drafts", help="path to a JSON drafts file (default: bundled sample batch)")
     p.add_argument("--dry-run", action="store_true",
@@ -82,6 +89,20 @@ def main(argv: list[str] | None = None) -> int:
         return run_self_test()
     if args.command == "process":
         return _cmd_process(args)
+    if args.command in ("status", "resume"):
+        store = SuppressionStore(args.db)
+        try:
+            if args.command == "resume":
+                print("pause cleared; bounce counting restarts from the newest send" if store.resume() else "sending was not paused")
+                return 0
+            sent, bounced = store.bounce_stats(args.window)
+            rate = f"{bounced / sent:.1%}" if sent else "n/a"
+            print(f"sends counted: {sent}   bounced: {bounced}   rate: {rate}")
+            reason = store.paused()
+            print(f"sending is PAUSED: {reason}" if reason else "sending is not paused")
+            return 3 if reason else 0
+        finally:
+            store.close()
     parser.print_help()
     return 2
 

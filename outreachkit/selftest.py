@@ -7,6 +7,9 @@ suite runs offline in well under a second.
 from __future__ import annotations
 
 import datetime as dt
+import os
+import sqlite3
+import tempfile
 
 from .models import Draft, DraftStatus, OutreachConfig, load_sample_drafts
 from .mx import StaticResolver
@@ -138,6 +141,73 @@ def run_self_test() -> int:
         check("unconfigured SMTP stub refuses to fire", False)
     except SenderNotConfiguredError:
         check("unconfigured SMTP stub refuses to fire", True)
+
+    # bounce-rate pause: latched, min-volume guard, resume restarts the count
+    def fresh_batch(n: int, tag: str) -> list[Draft]:
+        return [Draft(f"hello@{tag}{i}.example.com", "Hi", "Hello.") for i in range(n)]
+
+    roomy = OutreachConfig(max_per_run=5, max_per_day=500, spacing_seconds=0)
+    quiet = SuppressionStore(":memory:")
+    for i in range(10):
+        quiet.record_send(f"x@small{i}.example.com", f"small{i}.example.com")
+        if i < 5:
+            quiet.record_bounce(f"small{i}.example.com")
+    held = process_batch(fresh_batch(1, "q"), config=roomy, store=quiet, resolver=resolver, sender=MockSender(), dry_run=True)
+    check("bounce pause: a tiny sample (5 of 10) never pauses (min-volume guard)",
+          held[0].status is DraftStatus.WOULD_SEND)
+
+    noisy = SuppressionStore(":memory:")
+    for i in range(20):
+        noisy.record_send(f"x@n{i}.example.com", f"n{i}.example.com")
+    for i in range(2):
+        noisy.record_bounce(f"n{i}.example.com")
+    probe = MockSender()
+    dry = process_batch(fresh_batch(2, "d"), config=roomy, store=noisy, resolver=resolver, sender=probe, dry_run=True)
+    check("bounce pause: 2 of 20 bounced (10%) pauses a dry run without latching it",
+          all(r.status is DraftStatus.PAUSED and r.gate == "bounce_pause" for r in dry) and noisy.paused() is None)
+    live_run = process_batch(fresh_batch(2, "l"), config=roomy, store=noisy, resolver=resolver, sender=probe, dry_run=False)
+    check("bounce pause: a live run is refused, nothing is sent, and the pause is latched",
+          all(r.status is DraftStatus.PAUSED for r in live_run) and not probe.sent and noisy.paused() is not None)
+    check("bounce pause: once latched it stays paused even if the rate would now be fine",
+          noisy.bounce_stats()[0] == 20 and process_batch(
+              fresh_batch(1, "m"), config=OutreachConfig(spacing_seconds=0, pause_bounce_rate=0.5), store=noisy,
+              resolver=resolver, sender=probe, dry_run=True)[0].status is DraftStatus.PAUSED)
+    check("bounce pause: resume clears it", noisy.resume() is True and noisy.paused() is None)
+    after = process_batch(fresh_batch(1, "a"), config=roomy, store=noisy, resolver=resolver, sender=probe, dry_run=True)
+    check("bounce pause: after a resume the old bounces cannot re-pause at once",
+          after[0].status is DraftStatus.WOULD_SEND and noisy.bounce_stats() == (0, 0))
+    for i in range(20):
+        noisy.record_send(f"x@later{i}.example.com", f"later{i}.example.com")
+    for i in range(3):
+        noisy.record_bounce(f"later{i}.example.com")
+    again = process_batch(fresh_batch(1, "z"), config=roomy, store=noisy, resolver=resolver, sender=probe, dry_run=False)
+    check("bounce pause: a NEW spike after the resume pauses again",
+          again[0].status is DraftStatus.PAUSED and noisy.paused() is not None)
+    off_cfg = OutreachConfig(max_per_run=5, max_per_day=500, spacing_seconds=0, pause_bounce_rate=None)
+    noisy.resume()
+    for i in range(20):
+        noisy.record_send(f"x@off{i}.example.com", f"off{i}.example.com")
+        noisy.record_bounce(f"off{i}.example.com")
+    disabled = process_batch(fresh_batch(1, "o"), config=off_cfg, store=noisy, resolver=resolver, sender=probe, dry_run=True)
+    check("bounce pause: pause_bounce_rate=None switches the rate check off",
+          disabled[0].status is DraftStatus.WOULD_SEND)
+
+    # a database created before bounce tracking is migrated in place
+    with tempfile.TemporaryDirectory() as tmp:
+        legacy = os.path.join(tmp, "legacy.db")
+        raw = sqlite3.connect(legacy)
+        raw.executescript(
+            "CREATE TABLE suppression (domain TEXT PRIMARY KEY, reason TEXT NOT NULL, created_at TEXT NOT NULL);"
+            "CREATE TABLE send_log (id INTEGER PRIMARY KEY AUTOINCREMENT, to_email TEXT NOT NULL, domain TEXT NOT NULL,"
+            " sent_at TEXT NOT NULL);"
+            "INSERT INTO send_log (to_email, domain, sent_at) VALUES ('a@old.example.com', 'old.example.com', '2026-01-01T00:00:00');")
+        raw.commit()
+        raw.close()
+        migrated = SuppressionStore(legacy)
+        migrated.record_bounce("old.example.com")
+        check("bounce pause: a pre-existing database gains the bounced column in place",
+              migrated.bounce_stats() == (1, 1))
+        migrated.close()
 
     store.close()
     print()

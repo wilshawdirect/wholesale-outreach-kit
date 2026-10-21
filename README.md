@@ -94,6 +94,15 @@ reply) is treated as "defer, do not quarantine" — a flaky nameserver must
 never permanently blocklist a live supplier. Only a clean "no MX / NXDOMAIN"
 answer quarantines.
 
+## Bounce-rate pause
+
+`record_bounce(domain)` marks that domain's logged sends as bounced. Before every batch the pipeline looks at the newest
+`bounce_window` sends (default 100) since the last resume: once at least `bounce_min_sends` (default 20) are on record and more
+than `pause_bounce_rate` (default 5%) bounced, every draft is held as `paused` and the pause is **latched in the database**. It
+stays until a human looks at the bounces and runs `python -m outreachkit resume`; counting then restarts from the newest send, so
+the old bounces cannot re-pause at once but a fresh spike still can. `python -m outreachkit status` shows the rate and the pause
+(exit 3 while paused). A dry run reports a pause without latching one. `pause_bounce_rate=None` turns the check off.
+
 ## No cold repeats
 
 Running the same drafts file twice used to send every email twice. Before the MX lookup the pipeline now checks the send log:

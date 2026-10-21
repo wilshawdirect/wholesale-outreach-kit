@@ -18,6 +18,7 @@ class DraftStatus(StrEnum):
     NEEDS_REVIEW = "needs_review"
     CAPPED = "capped"
     ALREADY_CONTACTED = "already_contacted"
+    PAUSED = "paused"
     INVALID = "invalid"
 
 
@@ -56,6 +57,10 @@ class OutreachConfig:
     at ``warmup_base`` and grows by ``warmup_increment`` per full week elapsed,
     never exceeding ``max_per_day``.
 
+    Bounce-rate pause: once at least ``bounce_min_sends`` sends are on record (the newest
+    ``bounce_window`` since the last resume) and more than ``pause_bounce_rate`` of them
+    bounced, sending stops and stays stopped until a human runs ``resume``. ``None`` turns it off.
+
     No cold repeats: a recipient (``recontact_scope="address"``) or any address at
     its domain (``"domain"``, the default) that was sent to in the last
     ``recontact_days`` days is not cold-emailed again. ``0`` switches the gate off.
@@ -69,6 +74,9 @@ class OutreachConfig:
     warmup_increment: int = 5
     recontact_days: int = 30
     recontact_scope: str = "domain"
+    pause_bounce_rate: float | None = 0.05
+    bounce_min_sends: int = 20
+    bounce_window: int = 100
 
     def __post_init__(self) -> None:
         if self.recontact_scope not in ("domain", "address"):

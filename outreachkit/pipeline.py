@@ -1,4 +1,4 @@
-"""The gate stack: suppression -> no cold repeats -> MX -> fact-check -> reputation cap -> send."""
+"""The gate stack: bounce pause -> suppression -> no cold repeats -> MX -> fact-check -> reputation cap -> send."""
 from __future__ import annotations
 
 import time
@@ -9,6 +9,21 @@ from .models import Draft, DraftResult, DraftStatus, OutreachConfig
 from .mx import MXLookupError, MXResolver
 from .senders import Sender
 from .store import SuppressionStore
+
+
+def _pause_reason(store: SuppressionStore, config: OutreachConfig, dry_run: bool) -> str | None:
+    """Why this batch must not send: an existing latched pause, or a bounce rate over the limit (which latches it).
+    A dry run reports the pause but does not latch one."""
+    latched = store.paused()
+    if latched or config.pause_bounce_rate is None:
+        return latched
+    sent, bounced = store.bounce_stats(config.bounce_window)
+    if sent >= config.bounce_min_sends and bounced / sent > config.pause_bounce_rate:
+        reason = f"bounce rate {bounced / sent:.1%} ({bounced} of the last {sent} sends) is over the {config.pause_bounce_rate:.1%} limit"
+        if not dry_run:
+            store.pause(reason)
+        return reason
+    return None
 
 
 def process_batch(
@@ -32,6 +47,13 @@ def process_batch(
     sender or the send log.
     """
     checker = fact_checker or FactChecker()
+    pause_reason = _pause_reason(store, config, dry_run)
+    if pause_reason:
+        return [
+            DraftResult(d, DraftStatus.PAUSED, "bounce_pause",
+                        f"sending is paused: {pause_reason}; look at the bounces, then run `resume`")
+            for d in drafts
+        ]
     results: list[DraftResult] = []
     cleared = 0  # drafts that passed every gate this run
     sends_today = store.sends_today()
