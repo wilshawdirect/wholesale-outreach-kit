@@ -58,6 +58,19 @@ class SuppressionStore:
         )
         self._conn.commit()
 
+    def recently_contacted(self, to_email: str, domain: str, days: int, scope: str = "domain") -> str | None:
+        """UTC time of the newest send within ``days`` days to this address (``scope="address"``) or to any
+        address at ``domain`` (``scope="domain"``); None if there is none. ``days <= 0`` always answers None."""
+        if days <= 0:
+            return None
+        cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+        column, value = ("to_email", to_email.lower()) if scope == "address" else ("domain", domain.lower())
+        row = self._conn.execute(
+            f"SELECT sent_at FROM send_log WHERE lower({column}) = ? AND sent_at >= ? ORDER BY sent_at DESC LIMIT 1",
+            (value, cutoff),
+        ).fetchone()
+        return row[0] if row else None
+
     def sends_today(self) -> int:
         """Return the number of sends logged since UTC midnight."""
         midnight = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT00:00:00")

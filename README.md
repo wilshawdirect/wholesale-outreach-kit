@@ -94,6 +94,14 @@ reply) is treated as "defer, do not quarantine" — a flaky nameserver must
 never permanently blocklist a live supplier. Only a clean "no MX / NXDOMAIN"
 answer quarantines.
 
+## No cold repeats
+
+Running the same drafts file twice used to send every email twice. Before the MX lookup the pipeline now checks the send log:
+a recipient's **domain** (the default; use `recontact_scope="address"` for just the address) that was sent to in the last
+`recontact_days` days (default 30) is held as `already_contacted`, and so is a second draft to the same company inside one batch.
+It uses the send log, so it works across runs and restarts. `OutreachConfig(recontact_days=0)` switches it off, for example when
+you are sending a deliberate follow-up.
+
 ## Why there is no ready-to-fire sender
 
 `SMTPSender` contains a complete STARTTLS implementation, but every

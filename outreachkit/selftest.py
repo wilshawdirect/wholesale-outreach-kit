@@ -80,6 +80,31 @@ def run_self_test() -> int:
           and len(sender.sent) == 1
           and store.sends_today() == 1)
 
+    again = process_batch(
+        [Draft("someone.else@acme-wholesale.example.com", "Another hello", "Hello.")],
+        config=config, store=store, resolver=resolver, sender=sender, dry_run=True)
+    check("no cold repeat: another address at a domain sent to today is held",
+          again[0].status is DraftStatus.ALREADY_CONTACTED and again[0].gate == "recontact")
+    by_address = OutreachConfig(spacing_seconds=0, recontact_scope="address")
+    other_address = process_batch(
+        [Draft("someone.else@acme-wholesale.example.com", "Another hello", "Hello.")],
+        config=by_address, store=store, resolver=resolver, sender=sender, dry_run=True)
+    check("no cold repeat: address scope lets a different address through",
+          other_address[0].status is DraftStatus.WOULD_SEND)
+    same_address = process_batch(
+        [drafts[0]], config=by_address, store=store, resolver=resolver, sender=sender, dry_run=True)
+    check("no cold repeat: the same address is held under address scope",
+          same_address[0].status is DraftStatus.ALREADY_CONTACTED)
+    off = process_batch(
+        [drafts[0]], config=OutreachConfig(spacing_seconds=0, recontact_days=0),
+        store=store, resolver=resolver, sender=sender, dry_run=True)
+    check("no cold repeat: recontact_days=0 switches the gate off", off[0].status is DraftStatus.WOULD_SEND)
+    pair = process_batch(
+        [Draft("a@one-company.example.org", "Hello", "Hi."), Draft("b@one-company.example.org", "Hello", "Hi.")],
+        config=config, store=SuppressionStore(":memory:"), resolver=resolver, sender=MockSender(), dry_run=True)
+    check("no cold repeat: two drafts to one company in one batch send once",
+          [r.status for r in pair] == [DraftStatus.WOULD_SEND, DraftStatus.ALREADY_CONTACTED])
+
     tight = OutreachConfig(max_per_run=5, max_per_day=1, spacing_seconds=0)
     capped = process_batch(
         [drafts[5]], config=tight, store=store, resolver=resolver,

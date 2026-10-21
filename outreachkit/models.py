@@ -17,6 +17,7 @@ class DraftStatus(StrEnum):
     MX_ERROR = "mx_error"
     NEEDS_REVIEW = "needs_review"
     CAPPED = "capped"
+    ALREADY_CONTACTED = "already_contacted"
     INVALID = "invalid"
 
 
@@ -54,6 +55,10 @@ class OutreachConfig:
     Warm-up ramp: when ``warmup_start`` is set, the effective daily cap starts
     at ``warmup_base`` and grows by ``warmup_increment`` per full week elapsed,
     never exceeding ``max_per_day``.
+
+    No cold repeats: a recipient (``recontact_scope="address"``) or any address at
+    its domain (``"domain"``, the default) that was sent to in the last
+    ``recontact_days`` days is not cold-emailed again. ``0`` switches the gate off.
     """
 
     max_per_run: int = 5
@@ -62,6 +67,12 @@ class OutreachConfig:
     warmup_start: dt.date | None = None
     warmup_base: int = 5
     warmup_increment: int = 5
+    recontact_days: int = 30
+    recontact_scope: str = "domain"
+
+    def __post_init__(self) -> None:
+        if self.recontact_scope not in ("domain", "address"):
+            raise ValueError(f"recontact_scope must be 'domain' or 'address', got {self.recontact_scope!r}")
 
     def effective_daily_cap(self, today: dt.date | None = None) -> int:
         """Return the daily send cap after applying the warm-up ramp."""

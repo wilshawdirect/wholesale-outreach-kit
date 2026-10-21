@@ -1,4 +1,4 @@
-"""The gate stack: suppression -> MX -> fact-check -> reputation cap -> send."""
+"""The gate stack: suppression -> no cold repeats -> MX -> fact-check -> reputation cap -> send."""
 from __future__ import annotations
 
 import time
@@ -23,9 +23,10 @@ def process_batch(
 ) -> list[DraftResult]:
     """Run every draft through the gate stack, in order, and return results.
 
-    Gate order is deliberate: durable memory first (suppression — free and
-    final), then the network check (MX — a dead domain gets quarantined so it
-    is never looked up again), then content (fact-check), then rate
+    Gate order is deliberate: durable memory first (suppression, then the
+    no-cold-repeat check — both free and final), then the network check (MX — a
+    dead domain gets quarantined so it is never looked up again), then content
+    (fact-check), then rate
     (per-run and per-day caps). Only drafts that clear all four gates are
     sent — or, in dry-run, reported as ``would_send`` without touching the
     sender or the send log.
@@ -35,6 +36,7 @@ def process_batch(
     cleared = 0  # drafts that passed every gate this run
     sends_today = store.sends_today()
     daily_cap = config.effective_daily_cap()
+    reached: set[str] = set()  # recipients (or domains) an earlier draft in THIS batch already cleared
 
     for draft in drafts:
         domain = draft.domain
@@ -49,6 +51,15 @@ def process_batch(
             results.append(DraftResult(
                 draft, DraftStatus.SUPPRESSED, "suppression",
                 f"domain on the never-contact list ({reason})"))
+            continue
+
+        contact_key = domain if config.recontact_scope == "domain" else draft.to_email.lower()
+        prior = store.recently_contacted(draft.to_email, domain, config.recontact_days, config.recontact_scope)
+        if prior or (config.recontact_days > 0 and contact_key in reached):
+            when = f"last sent {prior}Z" if prior else "an earlier draft in this batch"
+            results.append(DraftResult(
+                draft, DraftStatus.ALREADY_CONTACTED, "recontact",
+                f"{when} ({config.recontact_scope}); no cold repeat inside {config.recontact_days} days"))
             continue
 
         try:
@@ -79,6 +90,7 @@ def process_batch(
 
         if dry_run:
             cleared += 1
+            reached.add(contact_key)
             results.append(DraftResult(
                 draft, DraftStatus.WOULD_SEND, None, "all gates passed"))
             continue
@@ -88,6 +100,7 @@ def process_batch(
         sender.send(draft)
         store.record_send(draft.to_email, domain)
         cleared += 1
+        reached.add(contact_key)
         results.append(DraftResult(draft, DraftStatus.SENT, None, "delivered"))
 
     return results
